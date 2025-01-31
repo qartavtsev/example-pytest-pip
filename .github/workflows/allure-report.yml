@@ -1,56 +1,66 @@
-name: Allure Report
+name: Python
 
 on:
-  push:
-    branches-ignore:
-      - '!main'
+  workflow_dispatch:
+    inputs:
+      ALLURE_JOB_RUN_ID:
+        description: ALLURE_JOB_RUN_ID - service parameter (leave blank)
+        required: false
+      ALLURE_USERNAME:
+        description: ALLURE_USERNAME - service parameter (leave blank)
+        required: false
+      BROWSER:
+        required: true
+        default: Google Chrome
+      ENDPOINT: 
+        required: true
+        default: Demo
+      OS:
+        required: true
+        default: Windows    
+      VERSION:
+        required: true
+        default: '5.16.0'
 
 jobs:
-  autotests:
-    name: Run tests and generate Allure Report
+  tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up Python 3.x
-        uses: actions/setup-python@v2
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: '3.9'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Check code style
-        if: always()
+      - name: Get the latest allurectl
         run: |
-          flake8
+          latest_version=$(curl -s https://api.github.com/repos/allure-framework/allurectl/releases/latest | jq -r .tag_name)
+          echo "ALLURECTL_VERSION=$latest_version" >> $GITHUB_ENV
 
-      - name: Run Test
-        if: always()
-        run: pytest --alluredir=allure-results
-        continue-on-error: true
-
-      - name: Get Allure history
-        uses: actions/checkout@v3
-        if: always()
-        continue-on-error: true
+      - name: Install allurectl
+        uses: allure-framework/setup-allurectl@v1
         with:
-          ref: gh-pages
-          path: gh-pages
+          allure-endpoint: https://demo.testops.cloud/
+          allure-project-id: 3111
+          allure-token: ${{ secrets.ALLURE_TOKEN }}
+          allurectl-version: ${{ env.ALLURECTL_VERSION }}
 
-      - name: Allure Report action from marketplace
-        uses: simple-elf/allure-report-action@v1.7
-        if: always()
-        with:
-          allure_results: allure-results
-          allure_history: allure-history
-
-      - name: Deploy report to Github Pages
-        if: always()
-        uses: peaceiris/actions-gh-pages@v2
+      - name: Run tests with pytest
+        run: |
+          allurectl watch -- pytest --alluredir=allure-results
         env:
-          PERSONAL_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PUBLISH_BRANCH: gh-pages
-          PUBLISH_DIR: allure-history
+          ALLURE_LAUNCH_NAME: "Test Run #${{ github.run_number }}"
+          ALLURE_RESULTS: "allure-results"
+          ALLURE_TESTPLAN_PATH: "./testplan.json"
+          BRANCH: ${{ github.ref_name }}
+          BROWSER: ${{ inputs.BROWSER }}
+          ENDPOINT: ${{ inputs.ENDPOINT }}
+          OS: ${{ inputs.OS }}
+          VERSION: ${{ inputs.VERSION }}
